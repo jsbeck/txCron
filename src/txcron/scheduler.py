@@ -1,4 +1,7 @@
+from datetime import datetime
+
 from zope.interface import implements
+from twisted.internet import reactor, defer
 
 from txcron.interfaces import IScheduler
 from txcron.jobs import CronJob, DateJob, IntervalJob
@@ -11,7 +14,7 @@ class Scheduler(object):
 
     __jobIdIter = 0
     __tasklist = {}
-    __nextJob = (0, None,)
+    __nextJob = None
 
     def __init__(self):
         pass
@@ -33,14 +36,16 @@ class Scheduler(object):
         job_id = self._getNextJobId()
 
         if isinstance(schedule, (int, long, float)):
-            job = IntervalJob(job_id, schedule, func, *args, **kwargs)
+            job = IntervalJob(job_id, self, schedule, func, *args, **kwargs)
         elif isinstance(schedule, datetime):
-            job = DateJob(job_id, schedule, func, *args, **kwargs)
+            job = DateJob(job_id, self, schedule, func, *args, **kwargs)
         #elif XXX: schedule matches cron string regex
+        #   job = CronJob(job_id, self, schedule, func, *args, **kwargs)
         else:
             raise ValueError("Could not evaluate which job type \
                               to create based on the schedule")
 
+        self.__tasklist[job_id] = job
         self.scheduleJob(job_id)
         return job
 
@@ -87,17 +92,20 @@ class Scheduler(object):
         if delay < 0.0:
             delay = 0.1
 
-        rd, rj = self.__nextJob
-        if delay < rd:
-            self.__nextJob = (delay, job,)
-
         df = defer.Deferred()
         df.addCallback(job.execute)
         df.addBoth(self.scheduleJob)
         job._timer = reactor.callLater(delay, df.callback)
+        return df
+
+    def getJob(self, job_id):
+        try:
+            return self.__tasklist[job_id]
+        except KeyError:
+            return None
+
+    def getJobs(self):
+        return self.__tasklist.values()
 
     def getPausedJobs(self):
-        return [job for job in self.__tasklist.values() if job.paused is True]
-
-    def getNextJob(self):
-        return self.__nextJob[1]
+        return [job for job in self.__tasklist.values() if job._paused is True]

@@ -50,8 +50,11 @@ class IScheduler(Interface):
     def pauseJob(job_id):
         """ """
 
+    def getJobs():
+        """Returns a list of jobs in the scheduler."""
+
     def getPausedJobs():
         """Returns a list of paused jobs."""
 
-    def getNextJob():
-        """Returns the job on the schedule with the closest execution time."""
+    def getJob(job_id):
+        """Returns the job that has job_id==job_id or None."""

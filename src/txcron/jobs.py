@@ -1,6 +1,8 @@
+import time
 from datetime import datetime
 
 from twisted.internet import reactor, defer
+from twisted.internet.error import AlreadyCalled, AlreadyCancelled
 from zope.interface import implements
 
 from txcron.interfaces import IJob
@@ -40,11 +42,17 @@ class AbstractBaseJob(object):
 
     def cancel(self):
         self._cancelled = True
-        self._timer.cancel()
+        try:
+            self._timer.cancel()
+        except (AlreadyCalled, AlreadyCancelled):
+            pass
 
     def pause(self):
         self._paused = True
-        self._timer.cancel()
+        try:
+            self._timer.cancel()
+        except (AlreadyCalled, AlreadyCancelled):
+            pass
 
     def reschedule(self, schedule):
         raise NotImplementedError
@@ -64,21 +72,21 @@ class CronJob(AbstractBaseJob):
         self.job_id = job_id
         self.manager = manager
         self.func = func
-        self.args = *args
-        self.kwargs = **kwargs
+        self.args = args
+        self.kwargs = kwargs
         self.cron_string = cron_string
 
         self.parseSchedule(cron_string)
 
     def getNextExecutionDelay(self):
-        delay = self.next_exec_time - datetime.now()
+        delay = self.next_exec_time - reactor.seconds()
         if delay < 0:
             delay = 0.1
         return delay
 
     def _find_next_exec_time(self):
         #XXX: figure out the next exec time
-        self.next_exec_time = datetime.now() + 10
+        self.next_exec_time = reactor.seconds() + 10
 
     def _post_exec_hook(self, result):
         self._find_next_exec_time()
@@ -104,8 +112,8 @@ class DateJob(AbstractBaseJob):
         self.job_id = job_id
         self.manager = manager
         self.func = func
-        self.args = *args
-        self.kwargs = **kwargs
+        self.args = args
+        self.kwargs = kwargs
         self.date_time = self.parseDateTime(date_time)
 
     def _post_exec_hook(self, result):
@@ -113,7 +121,7 @@ class DateJob(AbstractBaseJob):
         return result
 
     def getNextExecutionDelay(self):
-        delay = self.date_time - datetime.now()
+        delay = time.mktime(self.date_time.timetuple()) - reactor.seconds()
         if delay < 0:
             delay = 0.1
 
@@ -139,8 +147,8 @@ class IntervalJob(AbstractBaseJob):
         self.job_id = job_id
         self.manager = manager
         self.func = func
-        self.args = *args
-        self.kwargs = **kwargs
+        self.args = args
+        self.kwargs = kwargs
 
         if isinstance(interval, (float, int, long)):
             self.interval = interval
@@ -149,12 +157,12 @@ class IntervalJob(AbstractBaseJob):
 
     def _post_exec_hook(self, result):
         if not self.last_exec_time:
-            self.last_exec_time = datetime.now()
+            self.last_exec_time = reactor.seconds()
 
         self.next_exec_time = self.last_exec_time + self.interval
         
     def getNextExecutionDelay(self):
-        delay = self.next_exec_time - datetime.now()
+        delay = self.next_exec_time - reactor.seconds()
         if delay < 0.1:
             delay = 0.1
 
