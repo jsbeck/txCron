@@ -14,7 +14,6 @@ class Scheduler(object):
 
     __jobIdIter = 0
     __tasklist = {}
-    __nextJob = None
 
     def __init__(self):
         pass
@@ -96,6 +95,7 @@ class Scheduler(object):
         df.addCallback(job.execute)
         df.addBoth(self.scheduleJob)
         job._timer = reactor.callLater(delay, df.callback)
+        job.deferred = df
         return df
 
     def getJob(self, job_id):
