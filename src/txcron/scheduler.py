@@ -41,8 +41,8 @@ class Scheduler(object):
             job = IntervalJob(job_id, self, schedule, func, *args, **kwargs)
         elif isinstance(schedule, datetime):
             job = DateJob(job_id, self, schedule, func, *args, **kwargs)
-        #elif XXX: schedule matches cron string regex
-        #   job = CronJob(job_id, self, schedule, func, *args, **kwargs)
+        elif isinstance(schedule, basestring):
+            job = CronJob(job_id, self, schedule, func, *args, **kwargs)
         else:
             raise ValueError("Could not evaluate which job type \
                               to create based on the schedule")
@@ -52,44 +52,24 @@ class Scheduler(object):
         return job
 
     def removeJob(self, job_id):
-        try:
-            job = self.__tasklist[job_id]
-        except KeyError:
-            raise SchedulerError("Job %d not found" % (job_id,))
-
+        job = self.getJob(job_id)
         job.cancel()
         del self.__tasklist[job_id]
 
     def cancelJob(self, job_id):
-        try:
-            job = self.__tasklist[job_id]
-        except KeyError:
-            raise SchedulerError("Job %d not found" % (job_id,))
-
+        job = self.getJob(job_id)
         job.cancel()
 
     def pauseJob(self, job_id):
-        try:
-            job = self.__tasklist[job_id]
-        except KeyError:
-            raise SchedulerError("Job %d not found" % (job_id,))
-
+        job = self.getJob(job_id)
         job.pause()
 
     def resumeJob(self, job_id):
-        try:
-            job = self.__tasklist[job_id]
-        except KeyError:
-            raise SchedulerError("Job %d not found" % (job_id,))
-
+        job = self.getJob(job_id)
         job.resume()
 
     def scheduleJob(self, job_id):
-        try:
-            job = self.__tasklist[job_id]
-        except KeyError:
-            raise SchedulerError("Job %d not found" % (job_id,))
-
+        job = self.getJob(job_id)
         delay = job.getNextExecutionDelay()
         if delay < 0.0:
             delay = 0.1
@@ -104,7 +84,7 @@ class Scheduler(object):
         try:
             return self.__tasklist[job_id]
         except KeyError:
-            return None
+            raise SchedulerError("Job %d not found" % (job_id,))
 
     def getJobs(self):
         return self.__tasklist.values()

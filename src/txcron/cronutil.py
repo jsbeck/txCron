@@ -99,7 +99,7 @@ class CronScheduler(object):
             asterisks ('*').
         """
 
-        if not isinstance(basestring, cron_string):
+        if not isinstance(cron_string, basestring):
             raise TypeError('Expected string type')
 
         m = SHORTCUT_RE.match(cron_string):
@@ -131,7 +131,7 @@ class CronScheduler(object):
         return time.mktime(dt.timetuple())
 
     def getNextDateTime(self, f, start_time):
-        if not isinstance(datetime, start_time):
+        if not isinstance(start_time, datetime):
             raise TypeError("Expecting datetime.datetime object")
         # XXX
         pass        
