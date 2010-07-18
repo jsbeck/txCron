@@ -32,6 +32,9 @@ class Scheduler(object):
            interface
         """
 
+        if not callable(func):
+            raise ValueError("'func' must be callable")
+
         job_id = self._getNextJobId()
 
         if isinstance(schedule, (int, long, float)):
@@ -91,12 +94,11 @@ class Scheduler(object):
         if delay < 0.0:
             delay = 0.1
 
-        df = defer.Deferred()
-        df.addCallback(job.execute)
-        df.addBoth(self.scheduleJob)
-        job._timer = reactor.callLater(delay, df.callback)
-        job.deferred = df
-        return df
+        if job._timer and job._timer.active():
+            # XXX: should throw an error here?
+            job._timer.reset(delay)
+        else:
+            job._timer = reactor.callLater(delay, job.execute)
 
     def getJob(self, job_id):
         try:

@@ -1,6 +1,7 @@
+import os
 import sys
+sys.path.append(os.path.dirname(os.getcwd()))
 import time
-sys.path.append('/home/jhensley/projects/txCron/src')
 from datetime import datetime
 
 from twisted.trial.unittest import TestCase
@@ -41,6 +42,12 @@ class SchedulerTestCase(TestCase):
         # XXX
         pass
 
+    def test_add_bogus_job(self):
+        # Bogus schedule
+        self.assertRaises(ValueError, self.sched.addJob, 'bogus', t_func)
+        # Not callable function
+        self.assertRaises(ValueError, self.sched.addJob, 100, 'bogus')
+
     def test_remove_job(self):
         j = self.sched.addJob(300, t_func)
         self.assertTrue(isinstance(j, IntervalJob))
@@ -59,9 +66,6 @@ class SchedulerTestCase(TestCase):
         paused = self.sched.getPausedJobs()
         self.assertEquals(paused, [j])
         self.assertEquals(j._timer.active(), False)
-
-    def test_reschedule_job(self):
-        pass
 
     def test_get_job(self):
         j1 = self.sched.addJob(300, t_func)

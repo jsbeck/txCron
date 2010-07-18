@@ -41,6 +41,9 @@ class IScheduler(Interface):
            from the schedule.
         """
 
+    def scheduleJob(job_id):
+        """ """
+
     def cancelJob(job_id):
         """ """
 

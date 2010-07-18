@@ -6,6 +6,7 @@ from twisted.internet.error import AlreadyCalled, AlreadyCancelled
 from zope.interface import implements
 
 from txcron.interfaces import IJob
+from txcron.cronutil import CronScheduler
 
 class AbstractBaseJob(object):
     _paused = False
@@ -16,6 +17,7 @@ class AbstractBaseJob(object):
     job_id = 0
     next_exec_time = 0
     last_exec_time = 0
+    times_executed = 0
     args = []
     kwargs = {}
 
@@ -29,7 +31,8 @@ class AbstractBaseJob(object):
         raise NotImplementedError
 
     def execute(self):
-        self.last_exec_time = datetime.now()
+        self.last_exec_time = reactor.seconds()
+        self.times_executed = self.times_executed + 1
         df = defer.maybeDeferred(self.func, *self.args, **self.kwargs)
         df.addBoth(self._post_exec_hook)
         return df
@@ -61,12 +64,8 @@ class CronJob(AbstractBaseJob):
 
     implements(IJob)
 
-    minutes = None
-    hours = None
-    doms = None
-    months = None
-    dows = None
     cron_string = None
+    schedule = None
 
     def __init__(self, job_id, manager, cron_string, func, *args, **kwargs):
         self.job_id = job_id
@@ -75,31 +74,26 @@ class CronJob(AbstractBaseJob):
         self.args = args
         self.kwargs = kwargs
         self.cron_string = cron_string
-
-        self.parseSchedule(cron_string)
+        self.schedule = CronScheduler(cron_string)
 
     def getNextExecutionDelay(self):
+        if not self.next_exec_time:
+            self.next_exec_time = self.schedule.getNextTimestamp(datetime.now())
+
         delay = self.next_exec_time - reactor.seconds()
         if delay < 0:
             delay = 0.1
         return delay
 
-    def _find_next_exec_time(self):
-        #XXX: figure out the next exec time
-        self.next_exec_time = reactor.seconds() + 10
-
     def _post_exec_hook(self, result):
-        self._find_next_exec_time()
+        self.next_exec_time = self.schedule.getNextTimestamp(datetime.now())
+        self.manager.scheduleJob(self.job_id)
         return result
 
-    def parseSchedule(self, cron_string):
-        # XXX
-        pass
-
     def reschedule(self, cron_string):
-        self.parseSchedule(cron_string)
         self.cron_string = cron_string
-        self._find_next_exec_time()
+        self.schedule = CronScheduler(cron_string)
+        self.next_exec_time = self.schedule.getNextTimestamp(datetime.now())
         self._timer.reset(self.getNextExecutionDelay())
 
 class DateJob(AbstractBaseJob):
@@ -142,6 +136,7 @@ class IntervalJob(AbstractBaseJob):
     implements(IJob)
 
     interval = None
+    iterations = 0
 
     def __init__(self, job_id, manager, interval, func, *args, **kwargs):
         self.job_id = job_id
@@ -149,6 +144,7 @@ class IntervalJob(AbstractBaseJob):
         self.func = func
         self.args = args
         self.kwargs = kwargs
+        self.iterations = kwargs.get('iterations', 0)
 
         if isinstance(interval, (float, int, long)):
             self.interval = interval
@@ -160,7 +156,13 @@ class IntervalJob(AbstractBaseJob):
             self.last_exec_time = reactor.seconds()
 
         self.next_exec_time = self.last_exec_time + self.interval
-        
+        if self.iterations and self.iterations >= self.times_executed:
+            self.manager.removeJob(self.job_id)
+        else:
+            self.manager.scheduleJob(self.job_id)
+
+        return result
+
     def getNextExecutionDelay(self):
         delay = self.next_exec_time - reactor.seconds()
         if delay < 0.1:
