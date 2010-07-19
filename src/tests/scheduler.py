@@ -39,8 +39,10 @@ class SchedulerTestCase(TestCase):
         self.assertEqual(j.job_id, 1)
 
     def test_add_cron_job(self):
-        # XXX
-        pass
+        j = self.sched.addJob('*', t_func)
+        self.assertTrue(isinstance(j, CronJob))
+        self.assertEqual(self.sched, j.manager)
+        self.assertEqual(j.job_id, 1)
 
     def test_add_bogus_job(self):
         # Bogus schedule

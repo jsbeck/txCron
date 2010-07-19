@@ -6,7 +6,7 @@ from twisted.internet.error import AlreadyCalled, AlreadyCancelled
 from zope.interface import implements
 
 from txcron.interfaces import IJob
-from txcron.cronutil import CronScheduler
+from txcron.cronutil import CronParser
 
 class AbstractBaseJob(object):
     _paused = False
@@ -74,7 +74,7 @@ class CronJob(AbstractBaseJob):
         self.args = args
         self.kwargs = kwargs
         self.cron_string = cron_string
-        self.schedule = CronScheduler(cron_string)
+        self.schedule = CronParser(cron_string)
 
     def getNextExecutionDelay(self):
         if not self.next_exec_time:
