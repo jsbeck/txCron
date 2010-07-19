@@ -232,4 +232,5 @@ class CronParser(object):
         if not isinstance(start_time, datetime):
             raise TypeError("Expecting datetime.datetime object")
         # XXX: Find the next time to run, after start_time
+
         return datetime.now()        
