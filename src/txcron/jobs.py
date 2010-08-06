@@ -1,4 +1,5 @@
 import time
+import copy
 from datetime import datetime
 
 from twisted.internet import reactor, defer
@@ -12,7 +13,7 @@ class AbstractBaseJob(object):
     _paused = False
     _cancelled = False
     _timer = None
-    deferred = None
+    _df = defer.Deferred()
     func = None
     job_id = 0
     next_exec_time = 0
@@ -30,18 +31,53 @@ class AbstractBaseJob(object):
     def getNextExecutionDelay(self):
         raise NotImplementedError
 
+    def addCallback(self, func, *args, **kwargs):
+        """ Convenience method to add additional callbacks to the function
+            to be executed by this scheduled job.
+        """
+        if isinstance(self._df, defer.Deferred):
+            self._df.addCallback(func, *args, **kwargs)
+
+    def addErrback(self, func, *args, **kwargs):
+        """ Convenience method to add additional errbacks to the function
+            to be executed by this scheduled job.
+        """
+        if isinstance(self._df, defer.Deferred):
+            self._df.addErrback(func, *args, **kwargs)
+
     def execute(self):
         self.last_exec_time = reactor.seconds()
         self.times_executed = self.times_executed + 1
-        df = defer.maybeDeferred(self.func, *self.args, **self.kwargs)
-        df.addBoth(self._post_exec_hook)
-        return df
+
+        # Here 3 Deferred() object callback chains are going to be chained 
+        # together.  The first Deferred, main_df is triggered at the specified
+        # time based on the schedule for this job.  The second Deferred, 
+        # user_df is a deep copy of self.df, a chain of callbacks that are 
+        # user defined.  These user defined callbacks are added to the job 
+        # object via the self.df attribute after the job is created and added 
+        # to the schedule.  The self.df callbacks are called on every iteration 
+        # of the jobs execution.  The third and final callback chain, post_df
+        # is a Deferred that contains the callbacks necessary to reschedule 
+        # this job.
+        #
+        # The chain will go:
+        # main_df
+        #  user_df
+        #   post_df
+        main_df = defer.maybeDeferred(self.func, *self.args, **self.kwargs)
+        user_df = copy.deepcopy(self._df)
+        post_df = defer.Deferred()
+        post_df.addBoth(self._post_exec_hook)
+
+        main_df.chainDeferred(user_df)
+        user_df.chainDeferred(post_df)
+
+        return main_df
 
     def resume(self):
         self._paused = False
         self._cancelled = False
-        delay = self.getNextExecutionDelay()
-        self._timer.reset(delay)
+        self.manager.scheduleJob(self.job_id)
 
     def cancel(self):
         self._cancelled = True
@@ -68,6 +104,7 @@ class CronJob(AbstractBaseJob):
     schedule = None
 
     def __init__(self, job_id, manager, cron_string, func, *args, **kwargs):
+        self.df = defer.Deferred()
         self.job_id = job_id
         self.manager = manager
         self.func = func
@@ -103,6 +140,7 @@ class DateJob(AbstractBaseJob):
     date_time = None
 
     def __init__(self, job_id, manager, date_time, func, *args, **kwargs):
+        self.df = defer.Deferred()
         self.job_id = job_id
         self.manager = manager
         self.func = func
@@ -137,8 +175,11 @@ class IntervalJob(AbstractBaseJob):
 
     interval = None
     iterations = 0
+    times_executed = 0
 
+    # XXX: how to pass/set iterations?
     def __init__(self, job_id, manager, interval, func, *args, **kwargs):
+        self.df = defer.Deferred()
         self.job_id = job_id
         self.manager = manager
         self.func = func
@@ -155,6 +196,7 @@ class IntervalJob(AbstractBaseJob):
         if not self.last_exec_time:
             self.last_exec_time = reactor.seconds()
 
+        self.times_executed += 1
         self.next_exec_time = self.last_exec_time + self.interval
         if self.iterations and self.iterations >= self.times_executed:
             self.manager.removeJob(self.job_id)
