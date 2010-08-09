@@ -13,7 +13,8 @@ class AbstractBaseJob(object):
     _paused = False
     _cancelled = False
     _timer = None
-    _df = defer.Deferred()
+    _user_callbacks = []
+    _user_errbacks = []
     func = None
     job_id = 0
     next_exec_time = 0
@@ -35,15 +36,19 @@ class AbstractBaseJob(object):
         """ Convenience method to add additional callbacks to the function
             to be executed by this scheduled job.
         """
-        if isinstance(self._df, defer.Deferred):
-            self._df.addCallback(func, *args, **kwargs)
+        if not callable(func):
+            raise TypeError('%s must be callable' % (func,))
+
+        self._user_callbacks.append((func, *args, **kwargs,))
 
     def addErrback(self, func, *args, **kwargs):
         """ Convenience method to add additional errbacks to the function
             to be executed by this scheduled job.
         """
-        if isinstance(self._df, defer.Deferred):
-            self._df.addErrback(func, *args, **kwargs)
+        if not callable(func):
+            raise TypeError('%s must be callable' % (func,))
+
+        self._user_errbacks.append((func, *args, **kwargs,))
 
     def execute(self):
         self.last_exec_time = reactor.seconds()
@@ -52,20 +57,24 @@ class AbstractBaseJob(object):
         # Here 3 Deferred() object callback chains are going to be chained 
         # together.  The first Deferred, main_df is triggered at the specified
         # time based on the schedule for this job.  The second Deferred, 
-        # user_df is a deep copy of self.df, a chain of callbacks that are 
-        # user defined.  These user defined callbacks are added to the job 
-        # object via the self.df attribute after the job is created and added 
-        # to the schedule.  The self.df callbacks are called on every iteration 
-        # of the jobs execution.  The third and final callback chain, post_df
-        # is a Deferred that contains the callbacks necessary to reschedule 
-        # this job.
+        # user_df is built from the callbacks & errbacks added via the job 
+        # addCallback and addErrback interface.  The user callbacks/errbacks 
+        # are called on every iteration of the jobs execution.  The third and 
+        # final callback chain, post_df is a Deferred that contains the 
+        # callbacks necessary to reschedule this job.
         #
         # The chain will go:
         # main_df
         #  user_df
         #   post_df
         main_df = defer.maybeDeferred(self.func, *self.args, **self.kwargs)
-        user_df = copy.deepcopy(self._df)
+        user_df = defer.Deferred()
+        for f in self._user_callbacks: 
+            user_df.addCallback(f[0], *f[1], **f[2])
+
+        for f in self._user_errbacks:
+            user_df.addErrback(f[0], *f[1], **f[2])
+
         post_df = defer.Deferred()
         post_df.addBoth(self._post_exec_hook)
 
